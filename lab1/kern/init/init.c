@@ -78,7 +78,7 @@ lab1_print_cur_status(void) {
     cprintf("%d:  ds = %x\n", round, reg2);
     cprintf("%d:  es = %x\n", round, reg3);
     cprintf("%d:  ss = %x\n", round, reg4);
-    round ++;
+    round++;
 }
 
 static void
