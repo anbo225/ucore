@@ -69,15 +69,16 @@ static void
 default_init_memmap(struct Page *base, size_t n) {
     assert(n > 0);
     struct Page *p = base;
-    for (; p != base + n; p ++) {
-        assert(PageReserved(p));
-        p->flags = p->property = 0;
-        set_page_ref(p, 0);
+    for(; p != base+n; p++){
+    	assert(PageReserved(p));
+    	p->flags = 0;  // clear the reserved bit
+    	SetPageProperty(p); // so that we know this page is not allocated.
+    	p->property = 0;
+    	set_page_ref(p, 0);
+    	list_add_before(&free_list,&(p->page_link));
     }
     base->property = n;
-    SetPageProperty(base);
     nr_free += n;
-    list_add(&free_list, &(base->page_link));
 }
 
 static struct Page *
@@ -91,52 +92,66 @@ default_alloc_pages(size_t n) {
     while ((le = list_next(le)) != &free_list) {
         struct Page *p = le2page(le, page_link);
         if (p->property >= n) {
-            page = p;
-            break;
+            //allocate n pages start form p;
+        	for (int i = 0 ; i < n; i++){
+        		struct Page *p2 = le2page(le,page_link);
+        		ClearPageProperty(p2);
+        		ClearPageReserved(p2);
+        		list_del(le);
+        		le = list_next(le);
+        	}
+        	if (p->property > n){
+        		le2page(le,page_link)->property = p->property - n;
+        	}
+        	nr_free -= n;
+        	return p;
         }
     }
-    if (page != NULL) {
-        list_del(&(page->page_link));
-        if (page->property > n) {
-            struct Page *p = page + n;
-            p->property = page->property - n;
-            list_add(&free_list, &(p->page_link));
-    }
-        nr_free -= n;
-        ClearPageProperty(page);
-    }
-    return page;
+    return NULL;
 }
 
 static void
 default_free_pages(struct Page *base, size_t n) {
     assert(n > 0);
-    struct Page *p = base;
-    for (; p != base + n; p ++) {
+    struct Page *p = NULL;
+    list_entry_t *le = &free_list;
+    while((le = list_next(le)) != &free_list){
+    	p = le2page(le, page_link);
+    	if ( p > base){
+    		break;
+    	}
+    }
+
+    for (p = base ; p != base + n; p ++) {
         assert(!PageReserved(p) && !PageProperty(p));
         p->flags = 0;
+        SetPageProperty(base);
         set_page_ref(p, 0);
+        list_add_before(le, &(p->page_link));
     }
+
     base->property = n;
-    SetPageProperty(base);
-    list_entry_t *le = list_next(&free_list);
-    while (le != &free_list) {
-        p = le2page(le, page_link);
-        le = list_next(le);
-        if (base + base->property == p) {
-            base->property += p->property;
-            ClearPageProperty(p);
-            list_del(&(p->page_link));
-        }
-        else if (p + p->property == base) {
-            p->property += base->property;
-            ClearPageProperty(base);
-            base = p;
-            list_del(&(p->page_link));
-        }
+
+    p = le2page(le, page_link);
+    if (base + n == p){
+    	 base->property = n + p->property;
+    	 p->property = 0;
     }
-    nr_free += n;
-    list_add(&free_list, &(base->page_link));
+
+    le = list_prev(&(base->page_link));
+    p = le2page(le, page_link);
+    if ( le != &free_list && p + 1 == base){
+    	while ( le != &free_list){
+    		if (p->property){
+    			 p->property += base->property;
+    			 base->property = 0;
+    			 break;
+    		}
+    		le = list_prev(le);
+    		p = le2page(le, page_link);
+    	}
+    }
+    nr_free +=n;
 }
 
 static size_t
@@ -169,8 +184,11 @@ basic_check(void) {
     assert(alloc_page() == NULL);
 
     free_page(p0);
+
     free_page(p1);
+
     free_page(p2);
+
     assert(nr_free == 3);
 
     assert((p0 = alloc_page()) != NULL);
@@ -193,6 +211,7 @@ basic_check(void) {
     free_page(p);
     free_page(p1);
     free_page(p2);
+
 }
 
 // LAB2: below code is used to check the first fit allocation algorithm (your EXERCISE 1) 
