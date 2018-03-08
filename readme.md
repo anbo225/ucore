@@ -1,6 +1,6 @@
 # OS_prac : ucore 
 
-My solution of TSING ucore lab
+My solution for TSING ucore lab
 
 ---
 - [x] lab 1
